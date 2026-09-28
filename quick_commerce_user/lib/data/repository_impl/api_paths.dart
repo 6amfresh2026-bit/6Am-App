@@ -32,6 +32,8 @@ abstract final class ApiPaths {
 
   // Product subscriptions — recurring auto-delivery of a single product.
   static const subscriptions = '/food/user/subscriptions';
+  static const subscriptionDiscountConfig =
+      '/food/user/subscriptions/discount-config';
   static String subscription(String id) => '/food/user/subscriptions/$id';
   static String subscriptionOccurrences(String id) =>
       '/food/user/subscriptions/$id/occurrences';

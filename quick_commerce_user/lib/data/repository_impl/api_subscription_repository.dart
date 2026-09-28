@@ -14,6 +14,21 @@ class ApiSubscriptionRepository implements SubscriptionRepository {
   final ApiClient _client;
 
   @override
+  Future<Map<SubscriptionFrequency, int>> discountConfig() async {
+    final json = await _client.get(
+      ApiPaths.subscriptionDiscountConfig,
+      requiresAuth: true,
+    );
+    final raw = json is Map<String, dynamic> ? json.mapAt('discount') : const {};
+    final result = <SubscriptionFrequency, int>{};
+    for (final frequency in SubscriptionFrequency.values) {
+      final value = raw[frequency.wireValue];
+      result[frequency] = value is num ? value.toInt() : 0;
+    }
+    return result;
+  }
+
+  @override
   Future<List<ProductSubscription>> list() async {
     final json = await _client.get(ApiPaths.subscriptions, requiresAuth: true);
     if (json is! Map<String, dynamic>) return const [];

@@ -126,3 +126,11 @@ final subscriptionsProvider =
     NotifierProvider<SubscriptionsController, SubscriptionsState>(
   SubscriptionsController.new,
 );
+
+/// The live discount rate (%) by frequency, straight from the backend — the
+/// "Save 12%" badges and "You save ₹X" figure on the subscribe screen must
+/// read from this, never from a number written into the widget.
+final subscriptionDiscountConfigProvider =
+    FutureProvider<Map<SubscriptionFrequency, int>>((ref) {
+  return ref.read(subscriptionRepositoryProvider).discountConfig();
+});

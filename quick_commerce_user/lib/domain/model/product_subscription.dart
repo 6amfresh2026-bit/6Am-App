@@ -116,6 +116,7 @@ class ProductSubscription {
     required this.status,
     this.itemName = '',
     this.variantId = '',
+    this.discountPercent = 0,
     this.daysOfWeek = const [],
     this.dayOfMonth,
     this.paymentMethod = PaymentMethod.cash,
@@ -130,6 +131,11 @@ class ProductSubscription {
   final String variantId;
   final int quantity;
   final SubscriptionFrequency frequency;
+
+  /// The subscription-discount rate (%) in effect for [frequency] when this
+  /// was created — snapshotted server-side, not a client guess. Applied to
+  /// every order this subscription auto-places.
+  final int discountPercent;
 
   /// `0` = Sunday … `6` = Saturday. Only meaningful when [frequency] is weekly.
   final List<int> daysOfWeek;

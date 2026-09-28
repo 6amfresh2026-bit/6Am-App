@@ -2,6 +2,11 @@ import '../model/payment_method.dart';
 import '../model/product_subscription.dart';
 
 abstract interface class SubscriptionRepository {
+  /// The live subscription-discount rate (%) by frequency, e.g.
+  /// `{daily: 0, weekly: 5, monthly: 12}`. Read before showing frequency
+  /// choices — never hardcode these numbers, the backend owns them.
+  Future<Map<SubscriptionFrequency, int>> discountConfig();
+
   Future<List<ProductSubscription>> list();
 
   /// Includes the pre-generated [SubscriptionOccurrence] schedule.

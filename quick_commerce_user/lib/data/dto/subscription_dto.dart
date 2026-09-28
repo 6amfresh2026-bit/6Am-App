@@ -49,6 +49,7 @@ class SubscriptionDto {
     required this.status,
     this.itemName = '',
     this.variantId = '',
+    this.discountPercent = 0,
     this.daysOfWeek = const [],
     this.dayOfMonth,
     this.paymentMethod = 'cash',
@@ -63,6 +64,10 @@ class SubscriptionDto {
   final String variantId;
   final int quantity;
   final String frequency;
+
+  /// The subscription-discount rate (%) snapshotted at creation — see
+  /// `GET /food/user/subscriptions/discount-config`.
+  final int discountPercent;
   final List<int> daysOfWeek;
   final int? dayOfMonth;
   final String deliveryTime;
@@ -85,6 +90,7 @@ class SubscriptionDto {
         variantId: json.str('variantId'),
         quantity: json.integer('quantity', 1),
         frequency: json.str('frequency', 'daily'),
+        discountPercent: json.integer('discountPercent'),
         daysOfWeek: _ints(json['daysOfWeek']),
         dayOfMonth: json.intOrNull('dayOfMonth'),
         deliveryTime: json.str('deliveryTime'),

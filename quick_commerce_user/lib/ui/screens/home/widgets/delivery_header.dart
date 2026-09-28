@@ -21,9 +21,9 @@ class DeliveryHeader extends ConsumerWidget {
     );
     final authState = ref.watch(authProvider);
 
-    final addressTitle = address == null ? '17/C' : address.label.wireValue;
+    final addressTitle = address == null ? 'Set location' : address.label.wireValue;
     final addressSubtitle = address == null
-        ? 'New Palasia, Indore'
+        ? 'Choose a delivery address'
         : address.shortLine;
 
     return Container(
@@ -172,32 +172,34 @@ class DeliveryHeader extends ConsumerWidget {
                         color: Color(0xFF0F172A),
                       ),
                     ),
-                    // Red Notification Badge
-                    Positioned(
-                      top: -1,
-                      right: -1,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        constraints: const BoxConstraints(
-                          minWidth: 19,
-                          minHeight: 19,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.5),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          unread > 0 ? (unread > 99 ? '99+' : '$unread') : '3',
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
+                    // Red Notification Badge — hidden when there is nothing
+                    // unread, rather than showing a fake count.
+                    if (unread > 0)
+                      Positioned(
+                        top: -1,
+                        right: -1,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(
+                            minWidth: 19,
+                            minHeight: 19,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            unread > 99 ? '99+' : '$unread',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),

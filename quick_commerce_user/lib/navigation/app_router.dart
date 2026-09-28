@@ -43,6 +43,7 @@ import '../ui/screens/profile/terms/terms_screen.dart';
 import '../ui/screens/search/search_screen.dart';
 import '../ui/screens/splash/splash_screen.dart';
 import '../ui/screens/subscription/subscription_detail_screen.dart';
+import '../ui/screens/subscription/subscription_screen.dart';
 import '../ui/screens/subscription/subscriptions_screen.dart';
 import '../ui/screens/wallet/wallet_screen.dart';
 import '../ui/screens/wishlist/wishlist_screen.dart';
@@ -310,6 +311,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: RouteNames.subscriptions,
         parentNavigatorKey: _rootKey,
         builder: (context, state) => const SubscriptionsScreen(),
+      ),
+      GoRoute(
+        path: RoutePaths.subscriptionCreate,
+        name: RouteNames.subscriptionCreate,
+        parentNavigatorKey: _rootKey,
+        builder: (context, state) => SubscriptionScreen(
+          product: state.extra is Product ? state.extra as Product : null,
+        ),
       ),
       GoRoute(
         path: RoutePaths.subscriptionDetails,

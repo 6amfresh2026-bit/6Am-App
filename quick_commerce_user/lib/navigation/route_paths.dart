@@ -30,6 +30,7 @@ abstract final class RoutePaths {
   static const monthlyLists = '/monthly-lists';
   static const monthlyListDetails = '/monthly-lists/:id';
   static const subscriptions = '/subscriptions';
+  static const subscriptionCreate = '/subscriptions/new';
   static const subscriptionDetails = '/subscriptions/:id';
   static const orderSuccess = '/order/success';
   static const orderTracking = '/order/:id/track';
@@ -78,6 +79,7 @@ abstract final class RouteNames {
   static const monthlyLists = 'monthlyLists';
   static const monthlyListDetails = 'monthlyListDetails';
   static const subscriptions = 'subscriptions';
+  static const subscriptionCreate = 'subscriptionCreate';
   static const subscriptionDetails = 'subscriptionDetails';
   static const orderSuccess = 'orderSuccess';
   static const orderTracking = 'orderTracking';

@@ -2,159 +2,290 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/app_strings.dart';
-import '../../../domain/model/cart.dart';
-import '../../../core/extensions/num_extensions.dart';
-import '../../../core/theme/app_radii.dart';
-import '../../../core/theme/app_spacing.dart';
-import '../../../core/theme/app_text_styles.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../domain/model/cart_item.dart';
 import '../../../di/app_providers.dart';
-import '../../../di/service_providers.dart';
-import '../../../domain/model/product.dart';
 import '../../../navigation/route_paths.dart';
-import '../monthly_list/widgets/save_cart_as_list_button.dart';
-import '../../common/widgets/buttons/primary_button.dart';
-import '../../common/widgets/cards/product_card.dart';
 import '../../common/widgets/feedback/app_dialog.dart';
-import '../../common/widgets/misc/section_header.dart';
+import '../../common/widgets/feedback/app_toast.dart';
 import '../../common/widgets/states/empty_state_widget.dart';
-import '../../common/widgets/states/offline_banner.dart';
-import '../home/home_provider.dart';
-import 'widgets/bill_details_card.dart';
-import 'widgets/cart_line_tile.dart';
 
-class CartScreen extends ConsumerWidget {
+class CartScreen extends ConsumerStatefulWidget {
   const CartScreen({super.key, this.showAppBar = true});
 
-  /// The cart tab supplies its own chrome; the pushed route wants an app bar.
   final bool showAppBar;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(cartProvider);
-    final cart = state.cart;
-    final pricingService = ref.watch(cartPricingServiceProvider);
+  ConsumerState<CartScreen> createState() => _CartScreenState();
+}
 
-    if (cart.isEmpty) {
-      return Scaffold(
-        appBar: showAppBar ? AppBar(title: const Text('Your cart')) : null,
-        body: SafeArea(
-          child: EmptyStateWidget(
-            icon: Icons.shopping_basket_outlined,
-            title: 'Your cart is empty',
-            message:
-                'Add a few essentials and we will have them at your door in minutes.',
-            actionLabel: 'Browse products',
-            onAction: () => context.go(RoutePaths.home),
-          ),
-        ),
-      );
+class _CartScreenState extends ConsumerState<CartScreen> {
+  String _selectedTab = 'All';
+  final Set<String> _savedForLaterIds = {};
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryGreen = Color(0xFF108061);
+    const darkTextColor = Color(0xFF142922);
+    const lightBg = Color(0xFFF4FAF7);
+    const cardBorderColor = Color(0xFFDFE8E3);
+    const secondaryTextColor = Color(0xFF758A82);
+
+    final cartState = ref.watch(cartProvider);
+    final realCart = cartState.cart;
+
+    // Filter items based on active tab — 'Saved' is the only real split this
+    // cart supports; there is no order-status concept (Active/Delivered/…)
+    // on items that have not been ordered yet.
+    final displayItems = realCart.items.where((i) {
+      if (_selectedTab == 'Saved') {
+        return _savedForLaterIds.contains(i.product.id);
+      }
+      return !_savedForLaterIds.contains(i.product.id);
+    }).toList();
+
+    // Server-priced when available (coupons, delivery-zone fee, GST slabs all
+    // live there); the local sum is only a same-frame placeholder while that
+    // call is in flight.
+    double subtotal = 0;
+    for (final item in displayItems) {
+      subtotal += item.product.price * item.quantity;
     }
-
-    final freeDeliveryGap = pricingService.amountToFreeDelivery(cart);
-    final crossSell = _crossSell(ref, cart.items.map((i) => i.product.id).toSet());
+    final pricing = realCart.pricing;
+    final hasServerPricing = pricing.total > 0;
+    final double deliveryFee = hasServerPricing ? pricing.deliveryFee : 0;
+    final double taxes = hasServerPricing ? pricing.tax : 0;
+    final double total = displayItems.isEmpty
+        ? 0
+        : hasServerPricing
+            ? pricing.total
+            : subtotal;
 
     return Scaffold(
-      appBar: showAppBar
-          ? AppBar(
-              title: const Text('Your cart'),
-              actions: [
-                TextButton(
-                  onPressed: () => _confirmClear(context, ref),
-                  child: Text(
-                    'Clear',
-                    style: context.text.labelMedium!
-                        .copyWith(color: context.semantic.danger),
-                  ),
-                ),
-              ],
-            )
-          : null,
-      bottomNavigationBar: _CheckoutBar(
-        total: cart.pricing.total > 0
-            ? cart.pricing.total
-            : cart.provisionalSubtotal,
-        itemCount: cart.itemCount,
-        isPricing: state.isPricing,
-        onCheckout: () => context.push(RoutePaths.checkout),
-      ),
+      backgroundColor: lightBg,
       body: SafeArea(
-        bottom: false,
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+        child: Column(
           children: [
-            const OfflineBanner(),
-            if (cart.priceChanges.isNotEmpty)
-              _PriceChangeNotice(changes: cart.priceChanges),
-            if (freeDeliveryGap > 0)
-              _FreeDeliveryNudge(amount: freeDeliveryGap)
-            else if (cart.pricing.isFreeDelivery && cart.pricing.total > 0)
-              const _FreeDeliveryEarned(),
-            _SellerHeader(
-              name: cart.sellerName,
-              etaMinutes: cart.pricing.deliveryPromiseMinutes,
-            ),
+            // Top Bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: Column(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
                 children: [
-                  for (final item in cart.items)
-                    CartLineTile(
-                      item: item,
-                      onIncrement: () =>
-                          ref.read(cartProvider.notifier).increment(item.lineId),
-                      onDecrement: () =>
-                          ref.read(cartProvider.notifier).decrement(item.lineId),
-                      onRemove: () =>
-                          ref.read(cartProvider.notifier).removeLine(item.lineId),
-                      onTap: () => context.push(
-                        RoutePaths.productDetailsOf(item.product.id),
-                        extra: item.product,
-                      ),
+                  if (Navigator.of(context).canPop())
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded, color: darkTextColor, size: 24),
+                      onPressed: () => context.pop(),
                     ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'My Cart',
+                    style: TextStyle(
+                      color: darkTextColor,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, color: darkTextColor, size: 24),
+                    onPressed: () => _confirmClear(context),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            _CouponRow(
-              pricing: cart.pricing,
-              onApply: () => context.push(RoutePaths.coupons),
-              onRemove: () => ref.read(cartProvider.notifier).removeCoupon(),
-            ),
-            if (crossSell.isNotEmpty) ...[
-              const SectionHeader(
-                title: 'Add these to your order',
-                subtitle: 'People often buy these together',
-              ),
-              SizedBox(
-                height: 285,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                  itemCount: crossSell.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
-                  itemBuilder: (context, index) => ProductCard(
-                    product: crossSell[index],
-                    heroTag: 'cart-cross-sell',
-                    onTap: () => context.push(
-                      RoutePaths.productDetailsOf(crossSell[index].id),
-                      extra: crossSell[index],
-                    ),
+
+            // Filter Tabs Row
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  _FilterChipTab(
+                    label: 'All',
+                    isSelected: _selectedTab == 'All',
+                    onTap: () => setState(() => _selectedTab = 'All'),
                   ),
-                ),
+                  if (_savedForLaterIds.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    _FilterChipTab(
+                      label: 'Saved',
+                      isSelected: _selectedTab == 'Saved',
+                      onTap: () => setState(() => _selectedTab = 'Saved'),
+                    ),
+                  ],
+                ],
               ),
-            ],
-            const SizedBox(height: AppSpacing.lg),
-            SaveCartAsListButton(cart: cart),
-            const SizedBox(height: AppSpacing.lg),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: BillDetailsCard(
-                lines: pricingService.billLines(cart),
-                savings: cart.totalSavings,
-                isPricing: state.isPricing,
-              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Cart Items & Summary
+            Expanded(
+              child: displayItems.isEmpty
+                  ? Center(
+                      child: EmptyStateWidget(
+                        icon: Icons.shopping_cart_outlined,
+                        title: 'Your cart is empty',
+                        message: 'Add fresh items to your cart to continue.',
+                        actionLabel: 'Browse Products',
+                        onAction: () => context.go(RoutePaths.home),
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      children: [
+                        // Cart Item Cards
+                        for (final item in displayItems)
+                          _CartItemCard(
+                            item: item,
+                            isSavedForLater: _savedForLaterIds.contains(item.product.id),
+                            onIncrement: () =>
+                                ref.read(cartProvider.notifier).increment(item.lineId),
+                            onDecrement: () =>
+                                ref.read(cartProvider.notifier).decrement(item.lineId),
+                            onRemove: () =>
+                                ref.read(cartProvider.notifier).removeLine(item.lineId),
+                            onToggleSaveForLater: () {
+                              setState(() {
+                                if (_savedForLaterIds.contains(item.product.id)) {
+                                  _savedForLaterIds.remove(item.product.id);
+                                  AppToast.success(context, 'Moved back to cart');
+                                } else {
+                                  _savedForLaterIds.add(item.product.id);
+                                  AppToast.success(context, 'Saved for later');
+                                }
+                              });
+                            },
+                          ),
+
+                        const SizedBox(height: 16),
+
+                        // Apply Coupon Card
+                        GestureDetector(
+                          onTap: () => context.push(RoutePaths.coupons),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: cardBorderColor),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(
+                                  Icons.local_offer_outlined,
+                                  color: darkTextColor,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 12),
+                                Text(
+                                  'Apply Coupon',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: darkTextColor,
+                                  ),
+                                ),
+                                Spacer(),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: secondaryTextColor,
+                                  size: 22,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Bill Details Breakdown
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Column(
+                            children: [
+                              _BillDetailRow(
+                                label: 'Subtotal',
+                                value: '₹${subtotal.toInt()}',
+                              ),
+                              const SizedBox(height: 8),
+                              _BillDetailRow(
+                                label: 'Delivery Fee',
+                                value: cartState.isPricing
+                                    ? '…'
+                                    : hasServerPricing
+                                        ? (deliveryFee > 0 ? '₹${deliveryFee.toInt()}' : 'FREE')
+                                        : 'Calculated at checkout',
+                              ),
+                              const SizedBox(height: 8),
+                              _BillDetailRow(
+                                label: 'Taxes',
+                                value: cartState.isPricing
+                                    ? '…'
+                                    : hasServerPricing
+                                        ? '₹${taxes.toInt()}'
+                                        : 'Calculated at checkout',
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Total Row
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Total',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                      color: darkTextColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${total.toInt()}',
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w800,
+                                      color: darkTextColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Main CTA Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryGreen,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(26),
+                              ),
+                            ),
+                            onPressed: () => context.push(RoutePaths.checkout),
+                            child: const Text(
+                              'Proceed to Checkout',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -162,24 +293,7 @@ class CartScreen extends ConsumerWidget {
     );
   }
 
-  /// Cross-sell drawn from home's already-fetched catalog — no extra request.
-  List<Product> _crossSell(WidgetRef ref, Set<String> inCart) {
-    final sections = ref.watch(homeProvider).sections;
-    final seen = <String>{};
-    final suggestions = <Product>[];
-
-    for (final section in sections) {
-      for (final product in section.products) {
-        if (inCart.contains(product.id) || !seen.add(product.id)) continue;
-        if (!product.isPurchasable) continue;
-        suggestions.add(product);
-        if (suggestions.length == 10) return suggestions;
-      }
-    }
-    return suggestions;
-  }
-
-  Future<void> _confirmClear(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmClear(BuildContext context) async {
     final confirmed = await AppDialog.confirm(
       context,
       icon: Icons.remove_shopping_cart_outlined,
@@ -188,328 +302,314 @@ class CartScreen extends ConsumerWidget {
       confirmLabel: 'Clear cart',
       destructive: true,
     );
-    if (confirmed) await ref.read(cartProvider.notifier).clear();
+    if (confirmed) {
+      ref.read(cartProvider.notifier).clear();
+      setState(() {});
+    }
   }
 }
 
-class _SellerHeader extends StatelessWidget {
-  const _SellerHeader({required this.name, this.etaMinutes});
-
-  final String name;
-  final int? etaMinutes;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.sm,
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.storefront_rounded, size: 17, color: context.colors.primary),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              name.isEmpty ? 'Your order' : name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.text.titleMedium,
-            ),
-          ),
-          if (etaMinutes != null)
-            Text(
-              'Arrives in ${etaMinutes!.asDurationLabel}',
-              style: context.text.labelMedium!
-                  .copyWith(color: context.semantic.success),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FreeDeliveryNudge extends StatelessWidget {
-  const _FreeDeliveryNudge({required this.amount});
-
-  final double amount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        0,
-      ),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: context.semantic.warningSoft,
-        borderRadius: AppRadii.rMd,
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.delivery_dining_rounded,
-            size: 18,
-            color: context.semantic.warning,
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              'Add ${amount.asCurrency} more for free delivery',
-              style: context.text.labelMedium!
-                  .copyWith(color: context.semantic.warning),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FreeDeliveryEarned extends StatelessWidget {
-  const _FreeDeliveryEarned();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        0,
-      ),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: context.semantic.successSoft,
-        borderRadius: AppRadii.rMd,
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.check_circle_rounded,
-            size: 18,
-            color: context.semantic.success,
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Text(
-            'Free delivery unlocked',
-            style: context.text.labelMedium!
-                .copyWith(color: context.semantic.success),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PriceChangeNotice extends StatelessWidget {
-  const _PriceChangeNotice({required this.changes});
-
-  final List changes;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        0,
-      ),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: context.semantic.dangerSoft,
-        borderRadius: AppRadii.rMd,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_rounded, size: 18, color: context.semantic.danger),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              '${changes.length} ${changes.length == 1 ? 'price has' : 'prices have'} '
-              'changed since you added them. The bill below is current.',
-              style: context.text.labelMedium!
-                  .copyWith(color: context.semantic.danger),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CouponRow extends StatelessWidget {
-  const _CouponRow({
-    required this.pricing,
-    required this.onApply,
-    required this.onRemove,
+class _FilterChipTab extends StatelessWidget {
+  const _FilterChipTab({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
   });
 
-  final CartPricing pricing;
-  final VoidCallback onApply;
-  final VoidCallback onRemove;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    // `couponCode` is echoed back even when the coupon was refused, so only
-    // `appliedCoupon` can say whether it was actually honoured. Reading the
-    // code as success is what printed "X applied · You saved ₹0" over a bill
-    // that had refused it.
-    final applied = pricing.isCouponApplied;
-    final rejected = pricing.hasCouponError;
-    final attemptedCode = pricing.couponCode ?? '';
+    const primaryGreen = Color(0xFF108061);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: applied
-            ? context.semantic.successSoft
-            : rejected
-                ? context.semantic.dangerSoft
-                : context.colors.surface,
-        borderRadius: AppRadii.rLg,
-        border: Border.all(
-          color: applied
-              ? context.semantic.success
-              : rejected
-                  ? context.semantic.danger
-                  : context.semantic.border,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryGreen : const Color(0xFFEFF3F1),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            color: isSelected ? Colors.white : const Color(0xFF556861),
+          ),
         ),
       ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.local_offer_rounded,
-            size: 18,
-            color: applied
-                ? context.semantic.success
-                : rejected
-                    ? context.semantic.danger
-                    : context.colors.primary,
+    );
+  }
+}
+
+class _CartItemCard extends StatelessWidget {
+  const _CartItemCard({
+    required this.item,
+    required this.isSavedForLater,
+    required this.onIncrement,
+    required this.onDecrement,
+    required this.onRemove,
+    required this.onToggleSaveForLater,
+  });
+
+  final CartItem item;
+  final bool isSavedForLater;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+  final VoidCallback onRemove;
+  final VoidCallback onToggleSaveForLater;
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryGreen = Color(0xFF108061);
+    const darkTextColor = Color(0xFF142922);
+    const cardBorderColor = Color(0xFFDFE8E3);
+    const secondaryTextColor = Color(0xFF758A82);
+
+    final product = item.product;
+    final isDairy = product.categoryName.toLowerCase().contains('dairy') ||
+        product.name.toLowerCase().contains('milk');
+
+    final badgeLabel = isDairy
+        ? 'Dairy'
+        : (product.categoryName.isNotEmpty ? product.categoryName : 'Fresh Produce');
+
+    final badgeBg = isDairy ? const Color(0xFFE3F2FD) : const Color(0xFFDDF7EC);
+    final badgeTextColor = isDairy ? const Color(0xFF1976D2) : primaryGreen;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cardBorderColor),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06108061),
+            blurRadius: 8,
+            offset: Offset(0, 2),
           ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: applied
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${pricing.appliedCouponCode} applied',
-                        style: context.text.titleSmall!
-                            .copyWith(color: context.semantic.success),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Image
+              Container(
+                width: 72,
+                height: 72,
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6F9F8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Image.asset(
+                  product.imageUrl.isNotEmpty
+                      ? product.imageUrl
+                      : 'assets/images/cat_vegetables.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    isDairy ? Icons.local_drink_rounded : Icons.eco_rounded,
+                    color: primaryGreen,
+                    size: 36,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Product Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: darkTextColor,
                       ),
+                    ),
+                    if (product.packSize.isNotEmpty) ...[
+                      const SizedBox(height: 1),
                       Text(
-                        'You saved ${pricing.discount.asCurrency}',
-                        style: context.text.bodySmall,
-                      ),
-                      // Nobody climbs a rung they were not told about.
-                      if (pricing.nextSlab != null)
-                        Text(
-                          'Add ${pricing.nextSlab!.spendMore.asCurrency} more '
-                          'to save ${pricing.nextSlab!.discount.asCurrency}',
-                          style: context.text.bodySmall!
-                              .copyWith(color: context.colors.primary),
+                        product.packSize,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: secondaryTextColor,
                         ),
+                      ),
                     ],
-                  )
-                : rejected
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            attemptedCode.isEmpty
-                                ? 'Coupon not applied'
-                                : '$attemptedCode not applied',
-                            style: context.text.titleSmall!
-                                .copyWith(color: context.semantic.danger),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(
+                          '₹${product.price.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: darkTextColor,
                           ),
-                          // Verbatim: the server writes these for a customer
-                          // to act on — "Needs ₹300 minimum — ₹2 more".
+                        ),
+                        if (product.mrp != null) ...[
+                          const SizedBox(width: 6),
                           Text(
-                            pricing.couponRejectedReason,
-                            style: context.text.bodySmall,
+                            '₹${product.mrp!.toInt()}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              decoration: TextDecoration.lineThrough,
+                              color: Color(0xFF99AAA3),
+                            ),
                           ),
                         ],
-                      )
-                    : Text('Apply a coupon', style: context.text.titleMedium),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Tag Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: badgeBg,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        badgeLabel,
+                        style: TextStyle(
+                          color: badgeTextColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Trash bin icon top right
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Color(0xFF99AAA3),
+                  size: 20,
+                ),
+                onPressed: onRemove,
+              ),
+            ],
           ),
-          if (applied)
-            TextButton(
-              onPressed: onRemove,
-              child: Text(
-                AppStrings.remove,
-                style: context.text.labelMedium!
-                    .copyWith(color: context.semantic.danger),
+
+          const SizedBox(height: 12),
+
+          // Bottom Action Row: Stepper & Save for Later
+          Row(
+            children: [
+              // Stepper
+              Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: cardBorderColor),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28),
+                      icon: const Icon(Icons.remove, color: primaryGreen, size: 16),
+                      onPressed: onDecrement,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        '${item.quantity}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: darkTextColor,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28),
+                      icon: const Icon(Icons.add, color: primaryGreen, size: 16),
+                      onPressed: onIncrement,
+                    ),
+                  ],
+                ),
               ),
-            )
-          else
-            TextButton(
-              onPressed: onApply,
-              child: Text(
-                'View offers',
-                style: context.text.labelMedium!
-                    .copyWith(color: context.colors.primary),
+
+              const Spacer(),
+
+              // Save for Later
+              GestureDetector(
+                onTap: onToggleSaveForLater,
+                child: Row(
+                  children: [
+                    Icon(
+                      isSavedForLater
+                          ? Icons.bookmark_rounded
+                          : Icons.bookmark_border_rounded,
+                      color: primaryGreen,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isSavedForLater ? 'Saved' : 'Save for Later',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: darkTextColor,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
+          ),
         ],
       ),
     );
   }
 }
 
-/// Sticky checkout bar. Pulses once when a new item lands in the cart.
-class _CheckoutBar extends StatelessWidget {
-  const _CheckoutBar({
-    required this.total,
-    required this.itemCount,
-    required this.isPricing,
-    required this.onCheckout,
-  });
+class _BillDetailRow extends StatelessWidget {
+  const _BillDetailRow({required this.label, required this.value});
 
-  final double total;
-  final int itemCount;
-  final bool isPricing;
-  final VoidCallback onCheckout;
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.md + MediaQuery.viewPaddingOf(context).bottom,
-      ),
-      decoration: BoxDecoration(
-        color: context.colors.surface,
-        border: Border(top: BorderSide(color: context.semantic.border)),
-      ),
-      child: PrimaryButton(
-        label: AppStrings.proceedToCheckout,
-        onPressed: isPricing ? null : onCheckout,
-        trailing: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '$itemCount ${itemCount == 1 ? 'item' : 'items'}',
-              style: context.text.labelMedium!.copyWith(color: context.colors.surface.withValues(alpha: 0.7)),
-            ),
-            Text(
-              total.asCurrency,
-              style: context.text.price.copyWith(color: context.colors.surface),
-            ),
-          ],
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF758A82),
+          ),
         ),
-      ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF142922),
+          ),
+        ),
+      ],
     );
   }
 }

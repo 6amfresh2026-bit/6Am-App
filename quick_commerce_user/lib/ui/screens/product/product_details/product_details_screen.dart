@@ -13,6 +13,7 @@ import '../../../common/cart_actions.dart';
 import '../../../common/widgets/loaders/full_page_loader.dart';
 import '../../../common/widgets/misc/app_network_image.dart';
 import '../../../common/widgets/states/error_state_widget.dart';
+import '../../subscription/subscriptions_provider.dart';
 import 'product_details_provider.dart';
 import 'product_details_state.dart';
 
@@ -478,8 +479,23 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
 
   /// Subscribe & Save Card
   Widget _buildSubscribeCard(BuildContext context, Product product) {
+    // Headline with the best rate on offer — from the backend, not a guess.
+    // Falls back to a rate-free label while the config is loading/unavailable
+    // rather than showing a number nobody promised.
+    final discountConfig = ref.watch(subscriptionDiscountConfigProvider);
+    final bestPercent = discountConfig.maybeWhen(
+      data: (rates) => rates.values.isEmpty
+          ? 0
+          : rates.values.reduce((a, b) => a > b ? a : b),
+      orElse: () => 0,
+    );
+    final label = bestPercent > 0
+        ? 'Subscribe & Save up to $bestPercent%'
+        : 'Subscribe & Save';
+
     return GestureDetector(
-      onTap: () => context.push(RoutePaths.coupons),
+      onTap: () =>
+          context.push(RoutePaths.subscriptionCreate, extra: product),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
@@ -504,7 +520,7 @@ class _ProductDetailsScreenState extends ConsumerState<ProductDetailsScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Subscribe & Save 10%',
+                label,
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,

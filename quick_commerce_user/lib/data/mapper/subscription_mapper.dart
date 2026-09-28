@@ -35,6 +35,7 @@ abstract final class SubscriptionMapper {
         variantId: dto.variantId,
         quantity: dto.quantity,
         frequency: SubscriptionFrequency.fromWire(dto.frequency),
+        discountPercent: dto.discountPercent,
         daysOfWeek: dto.daysOfWeek,
         dayOfMonth: dto.dayOfMonth,
         deliveryTime: dto.deliveryTime,
