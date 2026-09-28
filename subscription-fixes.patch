@@ -1,0 +1,64 @@
+--- a/Backend/src/modules/food/user/services/productSubscription.service.js	2026-09-02 19:06:55.261514147 +0000
++++ b/Backend/src/modules/food/user/services/productSubscription.service.js	2026-09-02 19:15:29.284364749 +0000
+@@ -170,6 +170,8 @@
+     const subscription = await FoodProductSubscription.findOne({ _id: id, userId });
+     if (!subscription) throw new NotFoundError('Subscription not found');
+ 
++    const previousStatus = subscription.status;
++
+     if (dto.status !== undefined) subscription.status = dto.status;
+     if (dto.quantity !== undefined) subscription.quantity = dto.quantity;
+     if (dto.deliveryTime !== undefined) subscription.deliveryTime = dto.deliveryTime;
+@@ -180,13 +182,51 @@
+ 
+     await subscription.save();
+ 
++    const today = startOfDay(new Date());
++
++    // Pausing or cancelling calls off every future delivery still scheduled.
++    // The reason recorded here is what lets a later resume tell these apart
++    // from a single delivery the customer skipped themselves.
+     if (dto.status === 'cancelled' || dto.status === 'paused') {
+         await FoodSubscriptionOccurrence.updateMany(
+-            { subscriptionId: id, status: 'scheduled', scheduledDate: { $gte: startOfDay(new Date()) } },
++            { subscriptionId: id, status: 'scheduled', scheduledDate: { $gte: today } },
+             { $set: { status: 'cancelled', cancelledAt: new Date(), cancelReason: `Subscription ${dto.status}` } },
+         );
+     }
+ 
++    // Resuming has to undo that. Without it the subscription reads "active"
++    // while every occurrence the pause cancelled stays cancelled, and the
++    // unique (subscriptionId, scheduledDate) index stops the generator from
++    // recreating them - so nothing is delivered until the rolling horizon
++    // moves past the old watermark, a silent gap of days or weeks.
++    if (dto.status === 'active' && previousStatus === 'paused') {
++        await FoodSubscriptionOccurrence.updateMany(
++            {
++                subscriptionId: id,
++                status: 'cancelled',
++                cancelReason: 'Subscription paused',
++                scheduledDate: { $gte: today },
++            },
++            { $set: { status: 'scheduled', cancelledAt: null, cancelReason: '' } },
++        );
++        // Tops the schedule back up when the pause outlasted the horizon.
++        await generateOccurrencesForSubscription(
++            subscription.toObject(),
++            addDays(new Date(), DEFAULT_HORIZON_DAYS),
++        );
++    }
++
++    // Occurrences snapshot the delivery time when they are generated, so a new
++    // time has to be pushed onto the ones already scheduled - otherwise the
++    // change quietly applies only to deliveries generated from now on, and the
++    // customer keeps getting the old slot for up to two weeks.
++    if (dto.deliveryTime !== undefined) {
++        await FoodSubscriptionOccurrence.updateMany(
++            { subscriptionId: id, status: 'scheduled', scheduledDate: { $gte: today } },
++            { $set: { deliveryTime: dto.deliveryTime } },
++        );
++    }
++
+     return { subscription: subscription.toObject() };
+ }
+ 

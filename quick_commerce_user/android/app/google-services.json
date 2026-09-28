@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "288841633330",
+    "project_id": "amfresh-addee",
+    "storage_bucket": "amfresh-addee.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:288841633330:android:8c09ad2a862de03b8bf62b",
+        "android_client_info": {
+          "package_name": "com.sixamfresh.delivery"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBX7EIxRbikqf6jGiVArNGZxk8i1kmQCzg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:288841633330:android:2633041e36ad15ae8bf62b",
+        "android_client_info": {
+          "package_name": "com.sixamfresh.restaurant"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBX7EIxRbikqf6jGiVArNGZxk8i1kmQCzg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:288841633330:android:1007427b9f9e32c88bf62b",
+        "android_client_info": {
+          "package_name": "com.sixamfreshuser.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBX7EIxRbikqf6jGiVArNGZxk8i1kmQCzg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

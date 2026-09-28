@@ -1,0 +1,11 @@
+# Copy to android/key.properties (gitignored) and fill in.
+# Generate the keystore once, keep it safe -- losing it means you can never
+# publish an update to the same Play listing again.
+#
+#   keytool -genkey -v -keystore ~/suvio-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias suvio
+#
+storeFile=/absolute/path/to/suvio-release.jks
+storePassword=
+keyAlias=suvio
+keyPassword=
