@@ -101,6 +101,34 @@ class SubscriptionsController extends Notifier<SubscriptionsState> {
     }
   }
 
+  /// Pauses or resumes a single subscription — the per-card toggle on the
+  /// list, without needing to open its detail screen.
+  Future<bool> setStatus(String subscriptionId, SubscriptionStatus status) async {
+    try {
+      final updated = await ref
+          .read(subscriptionRepositoryProvider)
+          .update(subscriptionId, status: status);
+      upsert(updated);
+      return true;
+    } catch (e) {
+      state = state.copyWith(failure: ErrorMapper.toFailure(e));
+      return false;
+    }
+  }
+
+  /// The master toggle: pauses or resumes every live subscription at once.
+  Future<bool> setAllStatus(SubscriptionStatus status) async {
+    state = state.copyWith(isLoading: true, clearFailure: true);
+    try {
+      await ref.read(subscriptionRepositoryProvider).bulkUpdateStatus(status);
+      await load();
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, failure: ErrorMapper.toFailure(e));
+      return false;
+    }
+  }
+
   /// Folds a subscription changed elsewhere back into the cache. The detail
   /// screen carries occurrences the list endpoint never returns, so an
   /// existing schedule is preserved when the update did not include one.

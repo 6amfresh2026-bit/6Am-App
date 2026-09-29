@@ -120,6 +120,13 @@ class ApiSubscriptionRepository implements SubscriptionRepository {
       _client.delete(ApiPaths.subscription(subscriptionId), requiresAuth: true);
 
   @override
+  Future<void> bulkUpdateStatus(SubscriptionStatus status) => _client.patch(
+        ApiPaths.subscriptionBulkStatus,
+        body: {'status': status.wireValue},
+        requiresAuth: true,
+      );
+
+  @override
   Future<List<SubscriptionOccurrence>> occurrences(
     String subscriptionId,
   ) async {
@@ -141,6 +148,33 @@ class ApiSubscriptionRepository implements SubscriptionRepository {
       ApiPaths.subscriptionOccurrenceCancel(subscriptionId, occurrenceId),
       body: {
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+      requiresAuth: true,
+    );
+    if (json is! Map<String, dynamic>) {
+      throw const ParseException('Unexpected delivery response.');
+    }
+    return SubscriptionMapper.occurrenceToDomain(
+      SubscriptionOccurrenceDto.fromJson(json.mapAt('occurrence')),
+    );
+  }
+
+  @override
+  Future<SubscriptionOccurrence> updateOccurrence(
+    String subscriptionId,
+    String occurrenceId, {
+    bool? skip,
+    int? quantityOverride,
+    bool clearQuantityOverride = false,
+  }) async {
+    final json = await _client.patch(
+      ApiPaths.subscriptionOccurrence(subscriptionId, occurrenceId),
+      body: {
+        'skip': ?skip,
+        if (clearQuantityOverride)
+          'quantityOverride': null
+        else
+          'quantityOverride': ?quantityOverride,
       },
       requiresAuth: true,
     );

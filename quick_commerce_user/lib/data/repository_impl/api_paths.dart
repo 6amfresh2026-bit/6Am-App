@@ -34,6 +34,7 @@ abstract final class ApiPaths {
   static const subscriptions = '/food/user/subscriptions';
   static const subscriptionDiscountConfig =
       '/food/user/subscriptions/discount-config';
+  static const subscriptionBulkStatus = '/food/user/subscriptions/status';
   static String subscription(String id) => '/food/user/subscriptions/$id';
   static String subscriptionOccurrences(String id) =>
       '/food/user/subscriptions/$id/occurrences';
@@ -42,6 +43,11 @@ abstract final class ApiPaths {
     String occurrenceId,
   ) =>
       '/food/user/subscriptions/$subscriptionId/occurrences/$occurrenceId/cancel';
+  static String subscriptionOccurrence(
+    String subscriptionId,
+    String occurrenceId,
+  ) =>
+      '/food/user/subscriptions/$subscriptionId/occurrences/$occurrenceId';
 
   // Survey — one active survey at a time, shown once to new users. Fetching it
   // marks it shown server-side, so only call it when about to display it.

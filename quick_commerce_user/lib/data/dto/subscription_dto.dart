@@ -10,6 +10,7 @@ class SubscriptionOccurrenceDto {
     this.cancelledAt,
     this.cancelReason = '',
     this.failureReason = '',
+    this.quantityOverride,
   });
 
   final String id;
@@ -20,6 +21,7 @@ class SubscriptionOccurrenceDto {
   final DateTime? cancelledAt;
   final String cancelReason;
   final String failureReason;
+  final int? quantityOverride;
 
   factory SubscriptionOccurrenceDto.fromJson(Map<String, dynamic> json) =>
       SubscriptionOccurrenceDto(
@@ -33,6 +35,7 @@ class SubscriptionOccurrenceDto {
         cancelledAt: json.dateOrNull('cancelledAt'),
         cancelReason: json.str('cancelReason'),
         failureReason: json.str('failureReason'),
+        quantityOverride: json.intOrNull('quantityOverride'),
       );
 }
 

@@ -15,6 +15,7 @@ abstract final class SubscriptionMapper {
         cancelledAt: dto.cancelledAt,
         cancelReason: dto.cancelReason,
         failureReason: dto.failureReason,
+        quantityOverride: dto.quantityOverride,
       );
 
   /// Soonest first — the schedule is read as "what's coming next".

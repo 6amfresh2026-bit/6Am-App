@@ -64,6 +64,12 @@ enum OccurrenceStatus {
       );
 }
 
+/// Backend marker for an occurrence the customer skipped themselves via the
+/// per-day toggle — the only kind that toggle is allowed to un-skip. One
+/// cancelled by pausing or deleting the subscription carries a different
+/// reason and stays cancelled.
+const _customerSkipReason = 'Skipped by customer';
+
 /// One dated delivery generated from a subscription's recurrence rule.
 class SubscriptionOccurrence {
   const SubscriptionOccurrence({
@@ -75,6 +81,7 @@ class SubscriptionOccurrence {
     this.cancelledAt,
     this.cancelReason = '',
     this.failureReason = '',
+    this.quantityOverride,
   });
 
   final String id;
@@ -86,14 +93,26 @@ class SubscriptionOccurrence {
   final String cancelReason;
   final String failureReason;
 
+  /// Customer-set quantity for this one delivery only. Null means "use the
+  /// subscription's own quantity".
+  final int? quantityOverride;
+
   bool get isScheduled => status == OccurrenceStatus.scheduled;
 
   bool get hasOrder => orderId.isNotEmpty;
 
-  /// Midnight starting the delivery day — the moment cancellation closes.
+  bool get isCustomerSkip =>
+      status == OccurrenceStatus.cancelled && cancelReason == _customerSkipReason;
+
+  /// The quantity this delivery will actually place, given the subscription's
+  /// own blanket quantity as the fallback.
+  int effectiveQuantity(int subscriptionQuantity) =>
+      quantityOverride ?? subscriptionQuantity;
+
+  /// Midnight starting the delivery day — the moment editing closes.
   ///
   /// The backend places the order as soon as the day begins, so "the night
-  /// before" is the whole cancellation window, exactly as specified.
+  /// before" is the whole edit window, exactly as specified.
   DateTime get cancellationCutoff =>
       DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day);
 
@@ -101,6 +120,35 @@ class SubscriptionOccurrence {
   /// the UI never offers a cancel the backend would reject with a 400.
   bool canCancelAt(DateTime now) =>
       isScheduled && now.isBefore(cancellationCutoff);
+
+  /// Whether the per-day toggle/stepper editor applies at all: still before
+  /// the cutoff, and either still scheduled or a skip this same toggle made
+  /// (so it can be turned back on).
+  bool canEditAt(DateTime now) =>
+      now.isBefore(cancellationCutoff) && (isScheduled || isCustomerSkip);
+
+  SubscriptionOccurrence copyWith({
+    OccurrenceStatus? status,
+    String? orderId,
+    DateTime? cancelledAt,
+    String? cancelReason,
+    String? failureReason,
+    int? quantityOverride,
+    bool clearQuantityOverride = false,
+  }) =>
+      SubscriptionOccurrence(
+        id: id,
+        scheduledDate: scheduledDate,
+        deliveryTime: deliveryTime,
+        status: status ?? this.status,
+        orderId: orderId ?? this.orderId,
+        cancelledAt: cancelledAt ?? this.cancelledAt,
+        cancelReason: cancelReason ?? this.cancelReason,
+        failureReason: failureReason ?? this.failureReason,
+        quantityOverride: clearQuantityOverride
+            ? null
+            : (quantityOverride ?? this.quantityOverride),
+      );
 }
 
 class ProductSubscription {

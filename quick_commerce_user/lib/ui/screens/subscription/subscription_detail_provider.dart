@@ -133,6 +133,43 @@ class SubscriptionDetailController
     }
   }
 
+  /// Toggles one delivery on/off and/or overrides its quantity for that day
+  /// only. Pass `clearQuantityOverride: true` to drop back to the
+  /// subscription's own quantity.
+  Future<bool> updateOccurrence(
+    SubscriptionOccurrence occurrence, {
+    bool? skip,
+    int? quantityOverride,
+    bool clearQuantityOverride = false,
+  }) async {
+    state = state.copyWith(isSaving: true, clearFailure: true);
+    try {
+      final updated = await ref.read(subscriptionRepositoryProvider).updateOccurrence(
+            arg,
+            occurrence.id,
+            skip: skip,
+            quantityOverride: quantityOverride,
+            clearQuantityOverride: clearQuantityOverride,
+          );
+
+      final current = state.subscription;
+      if (current != null) {
+        final occurrences = current.occurrences
+            .map((o) => o.id == updated.id ? updated : o)
+            .toList();
+        final next = current.copyWith(occurrences: occurrences);
+        state = state.copyWith(subscription: next, isSaving: false);
+        ref.read(subscriptionsProvider.notifier).upsert(next);
+      } else {
+        state = state.copyWith(isSaving: false);
+      }
+      return true;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, failure: ErrorMapper.toFailure(e));
+      return false;
+    }
+  }
+
   void clearFailure() => state = state.copyWith(clearFailure: true);
 
   Future<bool> _setStatus(SubscriptionStatus status) async {

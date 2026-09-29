@@ -38,6 +38,11 @@ abstract interface class SubscriptionRepository {
 
   Future<void> cancel(String subscriptionId);
 
+  /// Pauses or resumes every one of the customer's subscriptions at once —
+  /// the master toggle on the subscriptions list. Cancelled subscriptions are
+  /// left alone.
+  Future<void> bulkUpdateStatus(SubscriptionStatus status);
+
   Future<List<SubscriptionOccurrence>> occurrences(String subscriptionId);
 
   /// Calls off one upcoming delivery. The backend refuses once the delivery
@@ -46,5 +51,18 @@ abstract interface class SubscriptionRepository {
     String subscriptionId,
     String occurrenceId, {
     String? reason,
+  });
+
+  /// Turns one delivery on/off and/or overrides its quantity, for that day
+  /// only. The backend refuses once the delivery day has begun — see
+  /// [SubscriptionOccurrence.canEditAt]. `quantityOverride: null` clears a
+  /// previously-set override back to the subscription's own quantity; omit
+  /// it entirely to leave the quantity untouched.
+  Future<SubscriptionOccurrence> updateOccurrence(
+    String subscriptionId,
+    String occurrenceId, {
+    bool? skip,
+    int? quantityOverride,
+    bool clearQuantityOverride = false,
   });
 }

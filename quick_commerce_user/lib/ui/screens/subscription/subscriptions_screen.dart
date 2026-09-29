@@ -10,6 +10,7 @@ import '../../../di/app_providers.dart';
 import '../../../di/service_providers.dart';
 import '../../../domain/model/product_subscription.dart';
 import '../../../navigation/route_paths.dart';
+import '../../common/widgets/feedback/app_toast.dart';
 import '../../common/widgets/loaders/list_skeleton.dart';
 import '../../common/widgets/misc/section_header.dart';
 import '../../common/widgets/misc/sound_refresh_indicator.dart';
@@ -20,16 +21,58 @@ import 'subscriptions_provider.dart';
 
 /// Recurring auto-delivery of a single product — the counterpart to monthly
 /// lists, which never order on their own.
-class SubscriptionsScreen extends ConsumerWidget {
+class SubscriptionsScreen extends ConsumerStatefulWidget {
   const SubscriptionsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SubscriptionsScreen> createState() => _SubscriptionsScreenState();
+}
+
+class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
+  /// When set, only subscriptions started on or after this date are shown.
+  DateTime? _startedFrom;
+
+  Future<void> _pickStartedFrom(BuildContext context) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startedFrom ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked != null) setState(() => _startedFrom = picked);
+  }
+
+  List<ProductSubscription> _filtered(List<ProductSubscription> list) {
+    final from = _startedFrom;
+    if (from == null) return list;
+    final cutoff = DateTime(from.year, from.month, from.day);
+    return list.where((s) => !s.startDate.isBefore(cutoff)).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final signedIn = ref.watch(authProvider).isSignedIn;
     final state = ref.watch(subscriptionsProvider);
+    final live = _filtered(state.live);
+    final cancelled = _filtered(state.cancelled);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Subscriptions')),
+      appBar: AppBar(
+        title: const Text('Subscriptions'),
+        actions: [
+          if (signedIn)
+            IconButton(
+              icon: Icon(
+                _startedFrom == null
+                    ? Icons.calendar_today_outlined
+                    : Icons.event_available_rounded,
+                color: _startedFrom == null ? null : context.colors.primary,
+              ),
+              tooltip: 'Filter by start date',
+              onPressed: () => _pickStartedFrom(context),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: switch (true) {
           _ when !signedIn => EmptyStateWidget(
@@ -61,7 +104,34 @@ class SubscriptionsScreen extends ConsumerWidget {
               child: ListView(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 children: [
-                  ...state.live.indexed.map(
+                  if (_startedFrom != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                      child: _FilterChip(
+                        date: _startedFrom!,
+                        onClear: () => setState(() => _startedFrom = null),
+                      ),
+                    ),
+                  if (state.live.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                      child: _MasterToggleRow(subscriptions: state.live),
+                    ),
+                  if (live.isEmpty && _startedFrom != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xl,
+                      ),
+                      child: Center(
+                        child: Text(
+                          'No subscriptions started on or after that date.',
+                          style: context.text.bodyMedium?.copyWith(
+                            color: context.semantic.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ...live.indexed.map(
                     (entry) => Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.md),
                       child: StaggeredEntrance(
@@ -70,11 +140,11 @@ class SubscriptionsScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  if (state.cancelled.isNotEmpty) ...[
+                  if (cancelled.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),
                     const SectionHeader(title: 'Cancelled'),
                     const SizedBox(height: AppSpacing.sm),
-                    ...state.cancelled.map(
+                    ...cancelled.map(
                       (subscription) => Padding(
                         padding: const EdgeInsets.only(bottom: AppSpacing.md),
                         child: _SubscriptionCard(subscription: subscription),
@@ -85,6 +155,74 @@ class SubscriptionsScreen extends ConsumerWidget {
               ),
             ),
         },
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({required this.date, required this.onClear});
+
+  final DateTime date;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Chip(
+        avatar: const Icon(Icons.calendar_today_outlined, size: 16),
+        label: Text('Started from ${DateLabels.dayMonthYear(date)}'),
+        onDeleted: onClear,
+        deleteIcon: const Icon(Icons.close_rounded, size: 16),
+      ),
+    );
+  }
+}
+
+/// The single switch that pauses or resumes every live subscription at once.
+/// Reads as "on" only when every one of them is already active.
+class _MasterToggleRow extends ConsumerWidget {
+  const _MasterToggleRow({required this.subscriptions});
+
+  final List<ProductSubscription> subscriptions;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final allActive = subscriptions.every((s) => s.isActive);
+    final busy = ref.watch(subscriptionsProvider).isLoading;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: context.semantic.surfaceAlt,
+        borderRadius: AppRadii.rLg,
+      ),
+      child: Row(
+        children: [
+          Icon(
+            allActive ? Icons.notifications_active_outlined : Icons.pause_circle_outline,
+            color: context.semantic.textSecondary,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              allActive ? 'All subscriptions active' : 'Some subscriptions paused',
+              style: context.text.labelLarge,
+            ),
+          ),
+          Switch(
+            value: allActive,
+            onChanged: busy
+                ? null
+                : (value) => ref.read(subscriptionsProvider.notifier).setAllStatus(
+                      value ? SubscriptionStatus.active : SubscriptionStatus.paused,
+                    ),
+          ),
+        ],
       ),
     );
   }
@@ -128,7 +266,10 @@ class _SubscriptionCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  _StatusChip(status: subscription.status),
+                  if (subscription.status.isCancelled)
+                    _StatusChip(status: subscription.status)
+                  else
+                    _SubscriptionToggle(subscription: subscription),
                 ],
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -168,6 +309,53 @@ class _SubscriptionCard extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Per-card pause/resume switch — turns off just this one subscription
+/// without opening its detail screen.
+class _SubscriptionToggle extends ConsumerStatefulWidget {
+  const _SubscriptionToggle({required this.subscription});
+
+  final ProductSubscription subscription;
+
+  @override
+  ConsumerState<_SubscriptionToggle> createState() => _SubscriptionToggleState();
+}
+
+class _SubscriptionToggleState extends ConsumerState<_SubscriptionToggle> {
+  bool _busy = false;
+
+  Future<void> _toggle(bool value) async {
+    setState(() => _busy = true);
+    final ok = await ref.read(subscriptionsProvider.notifier).setStatus(
+          widget.subscription.id,
+          value ? SubscriptionStatus.active : SubscriptionStatus.paused,
+        );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!ok) {
+      AppToast.error(
+        context,
+        ref.read(subscriptionsProvider).failure?.message ??
+            'Could not update that subscription.',
+      );
+      ref.read(subscriptionsProvider.notifier).clearFailure();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: Switch(
+          value: widget.subscription.isActive,
+          onChanged: _busy ? null : _toggle,
         ),
       ),
     );

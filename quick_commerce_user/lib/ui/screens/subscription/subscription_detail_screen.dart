@@ -98,17 +98,21 @@ class SubscriptionDetailScreen extends ConsumerWidget {
               )
             else
               ...upcoming.map(
-                (occurrence) => _OccurrenceRow(
-                  occurrence: occurrence,
-                  busy: state.isSaving,
-                  onCancel: () =>
-                      _cancelOccurrence(context, ref, occurrence),
-                  onOpenOrder: occurrence.hasOrder
-                      ? () => context.push(
-                            RoutePaths.orderDetailsOf(occurrence.orderId),
-                          )
-                      : null,
-                ),
+                (occurrence) => occurrence.canEditAt(DateTime.now())
+                    ? _EditableOccurrenceRow(
+                        subscriptionId: subscriptionId,
+                        occurrence: occurrence,
+                        subscriptionQuantity: subscription.quantity,
+                        busy: state.isSaving,
+                      )
+                    : _OccurrenceRow(
+                        occurrence: occurrence,
+                        onOpenOrder: occurrence.hasOrder
+                            ? () => context.push(
+                                  RoutePaths.orderDetailsOf(occurrence.orderId),
+                                )
+                            : null,
+                      ),
               ),
             if (history.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.lg),
@@ -120,8 +124,6 @@ class SubscriptionDetailScreen extends ConsumerWidget {
               ...history.map(
                 (occurrence) => _OccurrenceRow(
                   occurrence: occurrence,
-                  busy: state.isSaving,
-                  onCancel: () {},
                   onOpenOrder: occurrence.hasOrder
                       ? () => context.push(
                             RoutePaths.orderDetailsOf(occurrence.orderId),
@@ -145,41 +147,6 @@ class SubscriptionDetailScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _cancelOccurrence(
-    BuildContext context,
-    WidgetRef ref,
-    SubscriptionOccurrence occurrence,
-  ) async {
-    final confirmed = await AppDialog.confirm(
-      context,
-      title: 'Skip this delivery?',
-      message:
-          'Your ${DateLabels.dayMonth(occurrence.scheduledDate)} delivery will '
-          'be cancelled. The rest of the subscription carries on as normal.',
-      confirmLabel: 'Skip it',
-      destructive: true,
-      icon: Icons.event_busy_rounded,
-    );
-    if (!confirmed || !context.mounted) return;
-
-    final notifier =
-        ref.read(subscriptionDetailProvider(subscriptionId).notifier);
-    final ok = await notifier.cancelOccurrence(occurrence);
-    if (!context.mounted) return;
-
-    if (ok) {
-      AppToast.success(context, 'Delivery skipped');
-      return;
-    }
-    // The server is the authority on the cutoff — if it refused, show its own
-    // wording rather than a generic failure.
-    AppToast.error(
-      context,
-      ref.read(subscriptionDetailProvider(subscriptionId)).failure?.message ??
-          'Could not skip that delivery.',
-    );
-    notifier.clearFailure();
-  }
 }
 
 class _ScheduleCard extends StatelessWidget {
@@ -327,25 +294,196 @@ class _StatusActions extends ConsumerWidget {
   }
 }
 
+/// Per-day editor: turn one delivery on/off and adjust its quantity, with a
+/// Save button that appears only once something has actually changed.
+class _EditableOccurrenceRow extends ConsumerStatefulWidget {
+  const _EditableOccurrenceRow({
+    required this.subscriptionId,
+    required this.occurrence,
+    required this.subscriptionQuantity,
+    required this.busy,
+  });
+
+  final String subscriptionId;
+  final SubscriptionOccurrence occurrence;
+  final int subscriptionQuantity;
+  final bool busy;
+
+  @override
+  ConsumerState<_EditableOccurrenceRow> createState() =>
+      _EditableOccurrenceRowState();
+}
+
+class _EditableOccurrenceRowState
+    extends ConsumerState<_EditableOccurrenceRow> {
+  late int _quantity;
+  late bool _enabled;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFromOccurrence();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EditableOccurrenceRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.occurrence.status != widget.occurrence.status ||
+        oldWidget.occurrence.quantityOverride != widget.occurrence.quantityOverride) {
+      _syncFromOccurrence();
+    }
+  }
+
+  void _syncFromOccurrence() {
+    _quantity = widget.occurrence.effectiveQuantity(widget.subscriptionQuantity);
+    _enabled = widget.occurrence.isScheduled;
+  }
+
+  bool get _quantityDirty =>
+      _enabled &&
+      _quantity != widget.occurrence.effectiveQuantity(widget.subscriptionQuantity);
+
+  bool get _enabledDirty => _enabled != widget.occurrence.isScheduled;
+
+  bool get _dirty => _enabledDirty || _quantityDirty;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    final notifier =
+        ref.read(subscriptionDetailProvider(widget.subscriptionId).notifier);
+
+    final ok = await notifier.updateOccurrence(
+      widget.occurrence,
+      skip: _enabledDirty ? !_enabled : null,
+      quantityOverride: _quantityDirty ? _quantity : null,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (ok) {
+      AppToast.success(context, 'Saved');
+      return;
+    }
+    AppToast.error(
+      context,
+      ref.read(subscriptionDetailProvider(widget.subscriptionId)).failure?.message ??
+          'Could not save that change.',
+    );
+    ref.read(subscriptionDetailProvider(widget.subscriptionId).notifier).clearFailure();
+    setState(_syncFromOccurrence);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = widget.busy || _saving;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: context.semantic.surfaceAlt,
+        borderRadius: AppRadii.rMd,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _enabled ? Icons.schedule_rounded : Icons.event_busy_rounded,
+                size: 20,
+                color: _enabled
+                    ? context.colors.primary
+                    : context.semantic.textSecondary,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${DateLabels.relativeDay(widget.occurrence.scheduledDate)} · '
+                      '${DateLabels.clockFromWire(widget.occurrence.deliveryTime)}',
+                      style: context.text.bodyMedium,
+                    ),
+                    Text(
+                      _enabled ? 'Scheduled' : 'Skipped',
+                      style: context.text.labelSmall?.copyWith(
+                        color: context.semantic.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _enabled,
+                onChanged: busy ? null : (v) => setState(() => _enabled = v),
+              ),
+            ],
+          ),
+          if (_enabled) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Quantity for this delivery',
+                    style: context.text.labelMedium?.copyWith(
+                      color: context.semantic.textSecondary,
+                    ),
+                  ),
+                ),
+                QuantityStepper(
+                  quantity: _quantity,
+                  compact: true,
+                  height: 32,
+                  canIncrement: !busy,
+                  onIncrement: busy ? () {} : () => setState(() => _quantity++),
+                  onDecrement: busy || _quantity <= 1
+                      ? () {}
+                      : () => setState(() => _quantity--),
+                ),
+              ],
+            ),
+          ],
+          if (_dirty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: busy ? null : _save,
+                icon: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_rounded, size: 16),
+                label: const Text('Save'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Read-only display for a delivery that is no longer editable: it already
+/// has an order, has already been skipped/cancelled/failed, or its cutoff has
+/// passed. [_EditableOccurrenceRow] handles everything still within reach.
 class _OccurrenceRow extends StatelessWidget {
   const _OccurrenceRow({
     required this.occurrence,
-    required this.busy,
-    required this.onCancel,
     this.onOpenOrder,
   });
 
   final SubscriptionOccurrence occurrence;
-  final bool busy;
-  final VoidCallback onCancel;
   final VoidCallback? onOpenOrder;
 
   @override
   Widget build(BuildContext context) {
-    // Recomputed on every build so the cancel action disappears the moment the
-    // delivery day begins, without needing a refresh.
-    final canCancel = occurrence.canCancelAt(DateTime.now());
-
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: Row(
@@ -371,20 +509,14 @@ class _OccurrenceRow extends StatelessWidget {
             ),
           ),
           if (onOpenOrder != null)
-            TextButton(onPressed: onOpenOrder, child: const Text('View order'))
-          else if (canCancel)
-            TextButton(
-              onPressed: busy ? null : onCancel,
-              child: const Text('Skip'),
-            ),
+            TextButton(onPressed: onOpenOrder, child: const Text('View order')),
         ],
       ),
     );
   }
 
   String get _subtitle => switch (occurrence.status) {
-        OccurrenceStatus.scheduled =>
-          occurrence.canCancelAt(DateTime.now()) ? 'Scheduled' : 'Being prepared',
+        OccurrenceStatus.scheduled => 'Being prepared',
         OccurrenceStatus.orderPlaced => 'Order placed',
         OccurrenceStatus.cancelled => occurrence.cancelReason.isEmpty
             ? 'Cancelled'
