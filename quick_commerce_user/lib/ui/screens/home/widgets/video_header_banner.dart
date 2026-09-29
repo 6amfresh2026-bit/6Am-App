@@ -72,10 +72,15 @@ class _FullBackgroundVideoHeaderState
     }
   }
 
+  /// Each slide gets a fixed 10 seconds before advancing — including a video
+  /// one, which loops forever on its own (`setLooping(true)`) and so never
+  /// produces a natural "finished" moment to advance on instead.
+  static const _slideDuration = Duration(seconds: 10);
+
   void _startAutoScroll() {
     _autoScrollTimer?.cancel();
     if (_effectiveBanners.length < 2) return;
-    _autoScrollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _autoScrollTimer = Timer.periodic(_slideDuration, (_) {
       if (!mounted || !_pageController.hasClients) return;
       final nextIndex = (_currentIndex + 1) % _effectiveBanners.length;
       _pageController.animateToPage(
@@ -143,26 +148,6 @@ class _FullBackgroundVideoHeaderState
                   ),
           ),
 
-          // ── Layer 2: Subtle Contrast Gradient Overlay for Text Readability
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.black.withValues(alpha: 0.55),
-                      Colors.black.withValues(alpha: 0.15),
-                      Colors.black.withValues(alpha: 0.50),
-                    ],
-                    stops: const [0.0, 0.45, 1.0],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
           // ── Layer 3: Overlaid Header UI Elements ──────────────────────────
           Positioned.fill(
             child: SafeArea(
@@ -173,30 +158,6 @@ class _FullBackgroundVideoHeaderState
                   const DeliveryHeader(),
 
                   const Spacer(),
-
-                  // 2. Banner Page Indicators
-                  if (bannersToDisplay.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          bannersToDisplay.length,
-                          (index) => AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            width: index == _currentIndex ? 22 : 7,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: index == _currentIndex
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.45),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
 
                   // 3. Search Bar + 10 Min Delivery Badge Row
                   if (widget.searchBar != null && widget.deliveryBadge != null)

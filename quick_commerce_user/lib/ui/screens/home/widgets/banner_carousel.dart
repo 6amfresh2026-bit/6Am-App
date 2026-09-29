@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../../../core/constants/app_dimens.dart';
 import '../../../../core/constants/app_durations.dart';
@@ -30,7 +31,7 @@ class BannerCarousel extends StatefulWidget {
 }
 
 class _BannerCarouselState extends State<BannerCarousel> {
-  final _controller = PageController(viewportFraction: 0.98);
+  final _controller = PageController(viewportFraction: 1.0);
   Timer? _timer;
   int _index = 0;
 
@@ -49,7 +50,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
   void _startAutoScroll() {
     _timer?.cancel();
     if (widget.banners.length < 2) return;
-    _timer = Timer.periodic(AppDurations.bannerAutoScroll, (_) {
+    _timer = Timer.periodic(AppDurations.heroBannerAutoScroll, (_) {
       if (!mounted || !_controller.hasClients) return;
       _controller.animateToPage(
         (_index + 1) % widget.banners.length,
@@ -70,7 +71,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
   Widget build(BuildContext context) {
     if (widget.isLoading) {
       return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12),
+        padding: EdgeInsets.symmetric(horizontal: 0),
         child: ShimmerBox(height: 170, radius: AppRadii.rLg),
       );
     }
@@ -93,33 +94,11 @@ class _BannerCarouselState extends State<BannerCarousel> {
               onPageChanged: (i) => setState(() => _index = i),
               itemBuilder: (context, index) {
                 final banner = bannersToDisplay[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: GestureDetector(
-                    onTap: () => widget.onTap(banner),
-                    child: _HeroBannerCard(banner: banner),
-                  ),
+                return GestureDetector(
+                  onTap: () => widget.onTap(banner),
+                  child: _HeroBannerCard(banner: banner),
                 );
               },
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        // Pagination Dots
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            bannersToDisplay.length,
-            (i) => AnimatedContainer(
-              duration: AppDurations.fast,
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              height: 6,
-              width: i == _index ? 18 : 6,
-              decoration: BoxDecoration(
-                color: i == _index ? const Color(0xFF43B5A8) : const Color(0xFFE5E7EB),
-                // color: i == _index ? const Color(0xFFFFC107) : const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(999),
-              ),
             ),
           ),
         ),
@@ -136,22 +115,26 @@ class _HeroBannerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasCustomImage = banner.imageUrl.trim().isNotEmpty;
+    final isVideo = banner.isVideo;
+
+    if (isVideo) {
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: _BannerVideoPlayer(url: banner.mediaUrl),
+      );
+    }
 
     // Show full backend banner image edge-to-edge without extra overlays.
     if (hasCustomImage) {
       return Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(16),
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           child: AppNetworkImage(
             url: banner.imageUrl,
             fit: BoxFit.cover,
@@ -162,10 +145,6 @@ class _HeroBannerCard extends StatelessWidget {
       );
     }
 
-    // No image on the banner: render the banner's own copy on the brand
-    // gradient. This branch used to draw a fixed "Daily Essentials Delivered in
-    // 10 Minutes" card that ignored `banner` completely, so whatever the admin
-    // actually published was replaced by that slogan.
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -173,14 +152,7 @@ class _HeroBannerCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -234,5 +206,67 @@ class _HeroBannerCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _BannerVideoPlayer extends StatefulWidget {
+  const _BannerVideoPlayer({required this.url});
+
+  final String url;
+
+  @override
+  State<_BannerVideoPlayer> createState() => _BannerVideoPlayerState();
+}
+
+class _BannerVideoPlayerState extends State<_BannerVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initVideo();
+  }
+
+  Future<void> _initVideo() async {
+    if (widget.url.isEmpty) return;
+    try {
+      if (widget.url.startsWith('http://') || widget.url.startsWith('https://')) {
+        _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      } else {
+        _controller = VideoPlayerController.asset(widget.url);
+      }
+      await _controller!.initialize();
+      _controller!.setLooping(true);
+      _controller!.setVolume(0);
+      await _controller!.play();
+      if (mounted) setState(() => _isInitialized = true);
+    } catch (e) {
+      debugPrint('Video error: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isInitialized && _controller != null) {
+      return SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: _controller!.value.size.width,
+            height: _controller!.value.size.height,
+            child: VideoPlayer(_controller!),
+          ),
+        ),
+      );
+    }
+    return Container(color: Colors.black12);
   }
 }
