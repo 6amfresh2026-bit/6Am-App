@@ -10,6 +10,7 @@ import '../../../../di/app_providers.dart';
 import '../../../../navigation/route_paths.dart';
 import '../../../common/widgets/buttons/primary_button.dart';
 import '../../../common/widgets/inputs/otp_input.dart';
+import '../../location/location_prompt/location_onboarding_screen.dart';
 import 'otp_provider.dart';
 
 class OtpScreen extends ConsumerStatefulWidget {
@@ -43,10 +44,16 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       return;
     }
 
-    // Always land on Home. When there is no address yet, Home raises the
-    // location prompt over itself — collecting it after sign-in, since saving
-    // an address is an authenticated call.
+    // Collect a delivery address before Home — never after, since saving one
+    // is an authenticated call and the account only exists from this point.
     await ref.read(addressBookProvider.notifier).load();
+    if (!mounted) return;
+
+    if (await LocationOnboarding.needsCapture(ref)) {
+      if (!mounted) return;
+      context.go(RoutePaths.locationOnboarding);
+      return;
+    }
     if (!mounted) return;
 
     context.go(RoutePaths.home);

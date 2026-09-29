@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../di/app_providers.dart';
 import '../../../di/repository_providers.dart';
 import '../../../navigation/route_paths.dart';
+import '../location/location_prompt/location_onboarding_screen.dart';
 
 /// Brand animation while we decide where the user actually belongs.
 class SplashScreen extends ConsumerStatefulWidget {
@@ -63,8 +64,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       return;
     }
 
-    // Signed in: Home handles the missing-address case with its own prompt.
+    // Signed in: collect a delivery address before Home when this customer
+    // has never been asked and has none saved yet.
     await ref.read(addressBookProvider.notifier).load();
+    if (!mounted) return;
+
+    if (await LocationOnboarding.needsCapture(ref)) {
+      if (!mounted) return;
+      context.go(RoutePaths.locationOnboarding);
+      return;
+    }
     if (!mounted) return;
 
     context.go(RoutePaths.home);

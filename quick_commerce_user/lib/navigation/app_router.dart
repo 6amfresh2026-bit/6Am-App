@@ -21,6 +21,7 @@ import '../ui/screens/checkout/checkout_screen.dart';
 import '../ui/screens/coupons/coupons_screen.dart';
 import '../ui/screens/home/home_screen.dart';
 import '../ui/screens/location/address_selection/address_selection_screen.dart';
+import '../ui/screens/location/location_prompt/location_onboarding_screen.dart';
 import '../ui/screens/monthly_list/monthly_list_detail_screen.dart';
 import '../ui/screens/monthly_list/monthly_lists_screen.dart';
 import '../ui/screens/notifications/notifications_screen.dart';
@@ -95,6 +96,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: RouteNames.register,
         pageBuilder: (context, state) =>
             _fadeThrough(state, const RegisterScreen()),
+      ),
+      GoRoute(
+        path: RoutePaths.locationOnboarding,
+        name: RouteNames.locationOnboarding,
+        pageBuilder: (context, state) =>
+            _fadeThrough(state, const LocationOnboardingScreen()),
       ),
       GoRoute(
         path: RoutePaths.addressSelection,

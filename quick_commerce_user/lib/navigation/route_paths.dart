@@ -6,6 +6,7 @@ abstract final class RoutePaths {
   static const login = '/login';
   static const otp = '/otp';
   static const register = '/register';
+  static const locationOnboarding = '/location-onboarding';
   static const addressSelection = '/address/select';
 
   // Shell tabs
@@ -58,6 +59,7 @@ abstract final class RouteNames {
   static const login = 'login';
   static const otp = 'otp';
   static const register = 'register';
+  static const locationOnboarding = 'locationOnboarding';
   static const addressSelection = 'addressSelection';
   static const home = 'home';
   static const categories = 'categories';

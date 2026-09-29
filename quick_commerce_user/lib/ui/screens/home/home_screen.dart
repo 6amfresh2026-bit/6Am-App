@@ -13,8 +13,9 @@ import '../../common/widgets/misc/app_network_image.dart';
 import '../../common/widgets/misc/sound_refresh_indicator.dart';
 import '../../common/widgets/states/error_state_widget.dart';
 import '../../common/widgets/states/offline_banner.dart';
-import '../location/location_prompt/location_prompt_sheet.dart';
+import '../notifications/notifications_provider.dart';
 import '../product/product_listing/product_listing_args.dart';
+import 'widgets/banner_carousel.dart';
 import '../survey/survey_popup.dart';
 import 'home_provider.dart';
 import 'home_state.dart';
@@ -44,8 +45,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || !ref.read(authProvider).isSignedIn) return;
-      await LocationPromptSheet.showIfNeeded(context, ref);
-      if (!mounted) return;
       await SurveyPopup.showIfAvailable(context, ref);
     });
   }
@@ -60,6 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(homeProvider);
     final selectedAddress = ref.watch(selectedAddressProvider);
+    final unread = ref.watch(notificationsProvider.select((s) => s.unreadCount));
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -75,7 +75,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               Column(
                 children: [
                   const OfflineBanner(),
-                  Expanded(child: _buildBody(context, state, selectedAddress)),
+                  Expanded(child: _buildBody(context, state, selectedAddress, unread)),
                 ],
               ),
               const Positioned(
@@ -95,6 +95,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     BuildContext context,
     HomeState state,
     dynamic selectedAddress,
+    int unread,
   ) {
     if (state.failure != null &&
         state.sections.isEmpty &&
@@ -107,7 +108,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final addressText = selectedAddress != null
         ? '${selectedAddress.street.isNotEmpty ? selectedAddress.street : selectedAddress.formattedAddress}'
-        : 'Banjara Hills, Hyderabad';
+        : 'Set your delivery location';
 
     return SoundRefreshIndicator(
       onRefresh: () => ref.read(homeProvider.notifier).load(refresh: true),
@@ -121,7 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1. Top Location & Notification Header
-            _buildHeader(context, addressText),
+            _buildHeader(context, addressText, unread),
 
             const SizedBox(height: 16),
 
@@ -131,7 +132,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(height: 16),
 
             // 3. Dynamic Banner Card
-            _buildBannerCard(context, state),
+            BannerCarousel(
+              banners: state.banners,
+              isLoading: state.isLoadingBanners,
+              onTap: (banner) => _openBanner(context, banner),
+            ),
 
             const SizedBox(height: 22),
 
@@ -161,7 +166,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// Top location bar with notification bell
-  Widget _buildHeader(BuildContext context, String addressText) {
+  Widget _buildHeader(BuildContext context, String addressText, int unread) {
     return Row(
       children: [
         GestureDetector(
@@ -223,7 +228,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         GestureDetector(
-          onTap: () => context.push(RoutePaths.coupons),
+          onTap: () => context.push(RoutePaths.notifications),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -240,19 +245,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   size: 22,
                 ),
               ),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Container(
-                  width: 9,
-                  height: 9,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
+              if (unread > 0)
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -312,181 +318,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  /// Dark emerald hero banner card displaying home page banner
-  Widget _buildBannerCard(BuildContext context, HomeState state) {
-    final banners = state.banners;
-    final currentBanner = banners.isNotEmpty ? banners.first : null;
-
-    return GestureDetector(
-      onTap: currentBanner != null
-          ? () => _openBanner(context, currentBanner)
-          : () => context.push(
-                RoutePaths.productListing,
-                extra: const ProductListingArgs(title: 'Fresh Groceries'),
-              ),
-      child: Container(
-        width: double.infinity,
-        height: 165,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: const LinearGradient(
-            colors: [
-              Color(0xFF044E38),
-              Color(0xFF036C4B),
-              Color(0xFF02875D),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF00875A).withValues(alpha: 0.25),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            children: [
-              Positioned(
-                left: 18,
-                top: 18,
-                bottom: 18,
-                right: 150,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      currentBanner?.title.isNotEmpty == true
-                          ? currentBanner!.title
-                          : 'Fresh Groceries',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.outfit(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Up to 50% Off',
-                      style: GoogleFonts.outfit(
-                        fontSize: 23,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFECFDF5),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            currentBanner?.ctaText.isNotEmpty == true
-                                ? currentBanner!.ctaText
-                                : 'Shop Now',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF036C4B),
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            size: 16,
-                            color: Color(0xFF036C4B),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              Positioned(
-                top: 14,
-                right: 14,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('🌿', style: TextStyle(fontSize: 10)),
-                      const SizedBox(width: 3),
-                      Text(
-                        'Live Fresh',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Right side home page banner image
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: 160,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                  child: currentBanner != null && currentBanner.imageUrl.isNotEmpty
-                      ? AppNetworkImage(
-                          url: currentBanner.imageUrl,
-                          width: 160,
-                          height: 165,
-                          fit: BoxFit.cover,
-                        )
-                      : Image.asset(
-                          'assets/images/banner_vegetables.png',
-                          width: 160,
-                          height: 165,
-                          fit: BoxFit.cover,
-                          alignment: Alignment.centerLeft,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
-                            Icons.shopping_basket_rounded,
-                            size: 80,
-                            color: Colors.white24,
-                          ),
-                        ),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

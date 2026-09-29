@@ -9,6 +9,7 @@ import '../../../../di/app_providers.dart';
 import '../../../../navigation/route_paths.dart';
 import '../../../common/widgets/buttons/primary_button.dart';
 import '../../../common/widgets/inputs/app_text_field.dart';
+import '../../location/location_prompt/location_onboarding_screen.dart';
 import 'register_provider.dart';
 
 /// Second half of sign-up, shown once the phone number is verified and the
@@ -48,9 +49,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final saved = await ref.read(registerProvider.notifier).submit();
     if (!saved || !mounted) return;
 
-    // Same landing as a returning sign-in: Home raises the location prompt
-    // over itself when there is no address yet.
+    // Same landing as a fresh sign-in: collect the delivery address before
+    // Home when there is none saved yet.
     await ref.read(addressBookProvider.notifier).load();
+    if (!mounted) return;
+
+    if (await LocationOnboarding.needsCapture(ref)) {
+      if (!mounted) return;
+      context.go(RoutePaths.locationOnboarding);
+      return;
+    }
     if (!mounted) return;
 
     context.go(RoutePaths.home);
