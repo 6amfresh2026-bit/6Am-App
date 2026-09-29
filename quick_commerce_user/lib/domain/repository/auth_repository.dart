@@ -39,6 +39,11 @@ abstract interface class AuthRepository {
     DateTime? dateOfBirth,
   });
 
+  /// Uploads a photo taken with the camera or picked from the gallery as the
+  /// customer's profile picture. Returns the user with the new
+  /// [User.profileImage] already pointing at the stored copy.
+  Future<User> uploadProfileImage(String filePath);
+
   Future<Wallet> wallet();
 
   /// Creates a Razorpay order for a wallet top-up of [amountRupees].

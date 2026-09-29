@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart' show FormData, MultipartFile;
+
 import '../../core/errors/app_exception.dart';
 import '../../core/local_storage/local_storage.dart';
 import '../../core/network/api_client.dart';
@@ -131,6 +133,26 @@ class ApiAuthRepository implements AuthRepository {
     final user = UserMapper.toDomain(UserDto.fromJson(json.mapAt('user')));
     await _cacheUser(user);
     return user;
+  }
+
+  @override
+  Future<User> uploadProfileImage(String filePath) async {
+    final form = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    final json = await _client.post(
+      ApiPaths.profileImage,
+      body: form,
+      requiresAuth: true,
+    );
+
+    if (json is! Map<String, dynamic>) {
+      throw const ParseException('Unexpected profile response.');
+    }
+    final uploadedUser =
+        UserMapper.toDomain(UserDto.fromJson(json.mapAt('user')));
+    await _cacheUser(uploadedUser);
+    return uploadedUser;
   }
 
   @override

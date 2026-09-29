@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/errors/error_mapper.dart';
 import '../../../../core/extensions/string_extensions.dart';
@@ -13,6 +14,7 @@ import '../../../../di/repository_providers.dart';
 import '../../../common/widgets/buttons/primary_button.dart';
 import '../../../common/widgets/feedback/app_toast.dart';
 import '../../../common/widgets/inputs/app_text_field.dart';
+import '../../../common/widgets/misc/app_network_image.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -29,6 +31,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   String _gender = '';
   DateTime? _dateOfBirth;
   bool _saving = false;
+  bool _uploadingPhoto = false;
 
   @override
   void initState() {
@@ -77,6 +80,49 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     }
   }
 
+  Future<void> _changePhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _PhotoSourceSheet(),
+    );
+    if (source == null || !mounted) return;
+
+    XFile? picked;
+    try {
+      picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+    } catch (e) {
+      if (mounted) {
+        AppToast.error(
+          context,
+          source == ImageSource.camera
+              ? 'Could not open the camera. Check its permission in Settings.'
+              : 'Could not open the gallery. Check its permission in Settings.',
+        );
+      }
+      return;
+    }
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final user = await ref
+          .read(authRepositoryProvider)
+          .uploadProfileImage(picked.path);
+      ref.read(authProvider.notifier).setUser(user);
+      if (mounted) AppToast.success(context, 'Photo updated');
+    } catch (e) {
+      if (mounted) AppToast.error(context, ErrorMapper.toFailure(e).message);
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
@@ -94,22 +140,44 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     radius: 44,
                     backgroundColor:
                         context.colors.primary.withValues(alpha: 0.12),
-                    child: Text(
-                      (user?.displayName ?? 'S').initials,
-                      style: context.text.displaySmall!
-                          .copyWith(color: context.colors.primary),
-                    ),
+                    child: (user?.profileImage ?? '').isEmpty
+                        ? Text(
+                            (user?.displayName ?? 'S').initials,
+                            style: context.text.displaySmall!
+                                .copyWith(color: context.colors.primary),
+                          )
+                        : ClipOval(
+                            child: SizedBox(
+                              width: 88,
+                              height: 88,
+                              child: AppNetworkImage(
+                                url: user!.profileImage,
+                                fit: BoxFit.cover,
+                                fallbackIcon: Icons.person,
+                              ),
+                            ),
+                          ),
                   ),
+                  if (_uploadingPhoto)
+                    const Positioned.fill(
+                      child: CircleAvatar(
+                        radius: 44,
+                        backgroundColor: Colors.black38,
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
                   Positioned(
                     right: 0,
                     bottom: 0,
                     child: GestureDetector(
-                      // Image upload needs a file picker, which is out of scope
-                      // for this build — see README → Backend Gaps.
-                      onTap: () => AppToast.show(
-                        context,
-                        'Photo uploads are coming soon',
-                      ),
+                      onTap: _uploadingPhoto ? null : _changePhoto,
                       child: Container(
                         padding: const EdgeInsets.all(AppSpacing.sm),
                         decoration: BoxDecoration(
@@ -209,6 +277,78 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// "Take a photo" / "Choose from gallery" sheet for the profile picture.
+class _PhotoSourceSheet extends StatelessWidget {
+  const _PhotoSourceSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.lg,
+        ),
+        decoration: BoxDecoration(
+          color: context.colors.surface,
+          borderRadius: AppRadii.sheetTop,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+              decoration: BoxDecoration(
+                color: context.semantic.border,
+                borderRadius: AppRadii.rPill,
+              ),
+            ),
+            Text('Update profile photo', style: context.text.titleMedium),
+            const SizedBox(height: AppSpacing.md),
+            _SheetOption(
+              icon: Icons.photo_camera_outlined,
+              label: 'Take a photo',
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            _SheetOption(
+              icon: Icons.photo_library_outlined,
+              label: 'Choose from gallery',
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetOption extends StatelessWidget {
+  const _SheetOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: context.colors.primary),
+      title: Text(label, style: context.text.bodyLarge),
+      onTap: onTap,
     );
   }
 }

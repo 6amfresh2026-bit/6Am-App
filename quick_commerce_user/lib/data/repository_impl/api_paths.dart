@@ -10,6 +10,7 @@ abstract final class ApiPaths {
 
   // User — modules/food/user/routes/user.routes.js
   static const profile = '/food/user/profile';
+  static const profileImage = '/food/user/profile/profile-image';
   static const wallet = '/food/user/wallet';
   static const walletTopupOrder = '/food/user/wallet/topup/order';
   static const walletTopupVerify = '/food/user/wallet/topup/verify';
