@@ -270,6 +270,36 @@ class DeliveryAddress {
   }
 }
 
+/// A summary of another active order riding along on the same trip — see
+/// `FLUTTER_BLOCK_BATCHING_FLOW.md`. Not the full order: no address, no
+/// items. Fetch `GET /orders/:orderId` before letting the rider act on it.
+class BatchOrderSummary {
+  const BatchOrderSummary({
+    required this.id,
+    required this.orderCode,
+    required this.orderStatus,
+    required this.restaurantName,
+    required this.total,
+  });
+
+  final String id;
+  final String orderCode;
+  final String orderStatus;
+  final String restaurantName;
+  final double total;
+
+  factory BatchOrderSummary.fromJson(Map<String, dynamic> json) {
+    final pricing = json['pricing'] as Map<String, dynamic>? ?? {};
+    return BatchOrderSummary(
+      id: (json['_id'] ?? '').toString(),
+      orderCode: json['order_id'] as String? ?? json['orderId'] as String? ?? '',
+      orderStatus: json['orderStatus'] as String? ?? '',
+      restaurantName: json['restaurantName'] as String? ?? '',
+      total: (pricing['total'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
 class DeliveryOrder {
   const DeliveryOrder({
     required this.id,
@@ -297,6 +327,7 @@ class DeliveryOrder {
     this.acceptanceDeadlineAt,
     this.assignmentMode,
     this.assignedByRole,
+    this.batchOrders = const [],
   });
 
   final String id;
@@ -330,6 +361,12 @@ class DeliveryOrder {
 
   /// `ADMIN` or `RESTAURANT` when a person did the assigning.
   final String? assignedByRole;
+
+  /// Other active orders riding along on this same trip (block batching).
+  /// Empty when there is no batch. Summaries only — see [BatchOrderSummary].
+  final List<BatchOrderSummary> batchOrders;
+
+  bool get hasBatch => batchOrders.isNotEmpty;
 
   /// Whether this order was a race against other riders.
   ///
@@ -411,6 +448,7 @@ class DeliveryOrder {
       acceptanceDeadlineAt: acceptanceDeadlineAt,
       assignmentMode: assignmentMode,
       assignedByRole: assignedByRole,
+      batchOrders: batchOrders,
     );
   }
 
@@ -497,6 +535,10 @@ class DeliveryOrder {
       acceptanceDeadlineAt: json['acceptanceDeadlineAt'] != null
           ? DateTime.tryParse(json['acceptanceDeadlineAt'] as String)
           : null,
+      batchOrders: (json['batchOrders'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(BatchOrderSummary.fromJson)
+          .toList(),
     );
   }
 

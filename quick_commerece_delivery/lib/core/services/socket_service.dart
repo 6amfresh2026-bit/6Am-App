@@ -31,6 +31,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   final _orderDeassignedController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final _orderAddedToBatchController =
+      StreamController<Map<String, dynamic>>.broadcast();
   final _orderReadyController =
       StreamController<Map<String, dynamic>>.broadcast();
   final _orderStatusUpdateController =
@@ -57,6 +59,12 @@ class SocketService {
       _orderClaimedController.stream;
   Stream<Map<String, dynamic>> get onOrderDeassigned =>
       _orderDeassignedController.stream;
+  /// A nearby order from a *different* seller was added directly to the
+  /// rider's current trip — see FLUTTER_BLOCK_BATCHING_FLOW.md. Informational
+  /// only: it is already the rider's, there is nothing to accept and no
+  /// countdown, so this must never be routed through the new-order alert.
+  Stream<Map<String, dynamic>> get onOrderAddedToBatch =>
+      _orderAddedToBatchController.stream;
   Stream<Map<String, dynamic>> get onOrderReady => _orderReadyController.stream;
   Stream<Map<String, dynamic>> get onOrderStatusUpdate =>
       _orderStatusUpdateController.stream;
@@ -121,6 +129,10 @@ class SocketService {
       'order_deassigned',
       (data) => _orderDeassignedController.add(_asMap(data)),
     );
+    socket.on('order_added_to_batch', (data) {
+      offerLog('socket order_added_to_batch ${_orderRef(data)}');
+      _orderAddedToBatchController.add(_asMap(data));
+    });
     socket.on('order_ready', (data) => _orderReadyController.add(_asMap(data)));
     socket.on(
       'order_status_update',
@@ -194,6 +206,7 @@ class SocketService {
     _orderClaimedController.close();
     _orderAssignedController.close();
     _orderDeassignedController.close();
+    _orderAddedToBatchController.close();
     _orderReadyController.close();
     _orderStatusUpdateController.close();
     _locationUpdateController.close();

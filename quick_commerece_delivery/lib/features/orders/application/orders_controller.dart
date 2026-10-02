@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/error/result.dart';
+import '../../../core/services/haptic_service.dart';
 import '../../../core/services/socket_service.dart';
 import '../data/models/delivery_order.dart';
 import '../../wallet/data/wallet_repository.dart';
@@ -18,6 +19,7 @@ class OrdersController extends Notifier<OrdersState> {
   StreamSubscription? _orderClaimedSub;
   StreamSubscription? _orderAssignedSub;
   StreamSubscription? _orderDeassignedSub;
+  StreamSubscription? _orderAddedToBatchSub;
   StreamSubscription? _orderStatusSub;
   StreamSubscription? _orderReadySub;
   StreamSubscription? _connectionSub;
@@ -37,15 +39,29 @@ class OrdersController extends Notifier<OrdersState> {
     });
     _orderDeassignedSub = socket.onOrderDeassigned.listen((data) {
       _leaveTrackingIfCurrent(data);
-      // Say why. Three different things arrive on this event — the accept
-      // window lapsing, the customer cancelling, the shop never answering —
-      // and without a reason the order just disappears from the rider's list,
-      // which reads as a bug to them and as a missing order to whoever they
-      // ask about it.
-      ref.read(orderRemovedNoticeProvider.notifier).show(
-            _deassignReason(data),
-          );
+      // Say why — unless this order was never actually shown to the rider.
+      // A block-batched order can be assigned and then bounced straight back
+      // (two nearby orders racing for the same rider) with no accept prompt
+      // ever shown in between — see FLUTTER_BLOCK_BATCHING_FLOW.md §5. That
+      // deassign reuses the fleet-timeout reason string ("Not accepted in
+      // time"), which is simply false here: there was nothing to accept.
+      // Surfacing it would tell the rider they missed a window that never
+      // existed, so a deassign for an order they never saw is swallowed —
+      // same as they already wouldn't notice a fleet reassignment they never
+      // saw either.
+      if (_wasEverShownToRider(data)) {
+        ref.read(orderRemovedNoticeProvider.notifier).show(
+              _deassignReason(data),
+            );
+      }
       refreshAvailable();
+      refreshCurrent();
+    });
+    _orderAddedToBatchSub = socket.onOrderAddedToBatch.listen((_) {
+      // Informational only — see FLUTTER_BLOCK_BATCHING_FLOW.md §4. Never the
+      // full accept alarm: it's already the rider's, there's nothing to
+      // accept and no countdown to race.
+      HapticService.medium();
       refreshCurrent();
     });
     _orderStatusSub = socket.onOrderStatusUpdate.listen(
@@ -67,6 +83,7 @@ class OrdersController extends Notifier<OrdersState> {
       _orderClaimedSub?.cancel();
       _orderAssignedSub?.cancel();
       _orderDeassignedSub?.cancel();
+      _orderAddedToBatchSub?.cancel();
       _orderStatusSub?.cancel();
       _orderReadySub?.cancel();
       _connectionSub?.cancel();
@@ -119,6 +136,24 @@ class OrdersController extends Notifier<OrdersState> {
   String _deassignReason(Map<String, dynamic> data) {
     final reason = (data['reason'] ?? '').toString().trim();
     return reason.isEmpty ? 'This order was reassigned' : reason;
+  }
+
+  /// Whether the rider could plausibly have already seen [data]'s order —
+  /// as their current trip, in the available list, or as a batch summary on
+  /// the current trip. If none of those match, a deassign for it is a
+  /// server-side race the rider was never shown, not something to alert on.
+  bool _wasEverShownToRider(Map<String, dynamic> data) {
+    final orderId = (data['orderId'] ?? data['_id'] ?? data['id'])?.toString();
+    if (orderId == null || orderId.isEmpty) return true; // can't tell — err loud
+    final current = state;
+    if (current is! OrdersLoaded) return true;
+    if (current.currentOrder?.id == orderId) return true;
+    if (current.availableOrders.any((o) => o.id == orderId)) return true;
+    if (current.currentOrder?.batchOrders.any((b) => b.id == orderId) ??
+        false) {
+      return true;
+    }
+    return false;
   }
 
   void _leaveTrackingIfCurrent(Map<String, dynamic> data) {

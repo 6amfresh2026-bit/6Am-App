@@ -1082,6 +1082,62 @@ class _ActiveTripScaffoldState extends ConsumerState<_ActiveTripScaffold>
     );
   }
 
+  /// "You're also carrying this" banner for a block-batched order — see
+  /// FLUTTER_BLOCK_BATCHING_FLOW.md §4. Purely informational: nothing here
+  /// is tappable into an accept flow, because there's nothing to accept —
+  /// it's already the rider's, and it becomes the active trip automatically
+  /// once this one is delivered.
+  Widget _buildBatchBanner(DeliveryOrder order, Color textColor) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final batched in order.batchOrders)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: batched == order.batchOrders.last ? 0 : 6.h,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.layers_outlined, size: 16.sp, color: AppColors.warning),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: TextStyle(fontSize: 12.5.sp, color: textColor, height: 1.3),
+                        children: [
+                          const TextSpan(
+                            text: 'Another order added to your trip — ',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          TextSpan(
+                            text:
+                                '${batched.orderCode.isNotEmpty ? '#${batched.orderCode}' : 'Order'} · ${batched.restaurantName}. ',
+                          ),
+                          const TextSpan(
+                            text: "Finish this delivery first — it'll show up as your next trip.",
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomCard(
     ThemeData theme,
     bool isDarkMode,
@@ -1234,6 +1290,10 @@ class _ActiveTripScaffoldState extends ConsumerState<_ActiveTripScaffold>
                 ),
               ],
             ),
+            if (order.hasBatch) ...[
+              SizedBox(height: 14.h),
+              _buildBatchBanner(order, textColor),
+            ],
             SizedBox(height: 16.h),
             _buildProductsStrip(order, textColor, subTextColor),
             SizedBox(height: 16.h),
